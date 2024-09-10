@@ -1,7 +1,6 @@
-use anyhow::anyhow;
 use profileparser::{ProfileParser, ProfileParserImpl};
-pub use types::{UserRank, UserProfile};
 use types::PxlsResponse;
+pub use types::{UserProfile, UserRank};
 
 mod profileparser;
 mod types;
@@ -19,7 +18,7 @@ pub trait PxlsClient {
     ) -> impl std::future::Future<Output = Result<UserProfile, anyhow::Error>> + std::marker::Send;
 }
 
-struct PxlsEndpoints {
+pub struct PxlsEndpoints {
     stats: String,
     profile: String,
 }
@@ -74,14 +73,14 @@ impl PxlsClient for PxlsReqwestClient {
     }
 
     async fn get_profile_for_user(&self, user_id: &str) -> Result<UserProfile, anyhow::Error> {
-        Ok(ProfileParserImpl::get_profile_from_encoded_string(
+        ProfileParserImpl::get_profile_from_encoded_string(
             self.perform_request(&self.endpoints.profile.replace("{user_id}", user_id))
                 .await
                 .map(|result| result.text())?
                 .await?
                 .as_str(),
         )
-        .await?)
+        .await
     }
 }
 

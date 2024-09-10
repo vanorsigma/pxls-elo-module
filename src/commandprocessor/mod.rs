@@ -40,7 +40,7 @@ pub trait CommandProcessor<D: Database, P: PxlsClient> {
 }
 
 /// Internal implementation, used to spawn a runaway thread by the CommandProcessorCreator
-pub(super) trait CommandProcessorInternal<
+pub trait CommandProcessorInternal<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
     C: CommandProcessor<D, P>,
@@ -53,10 +53,10 @@ pub(super) trait CommandProcessorInternal<
 
     /// Creates Self, injecting the handle into the CommandProcessor
     /// It is the implementers responsibility to cause do_once to return false once the implementor is dropped
-    async fn inject_command_processor_into_appstate(
+    fn inject_command_processor_into_appstate(
         app_state: Arc<Mutex<AppState<D, P, C>>>,
         handle: JoinHandle<()>,
-    );
+    ) -> impl std::future::Future<Output = ()> + Send;
 }
 
 pub struct CommandProcessorImpl<D: Database + Send + 'static, P: PxlsClient + Send + 'static> {
@@ -64,6 +64,7 @@ pub struct CommandProcessorImpl<D: Database + Send + 'static, P: PxlsClient + Se
     queue: Arc<Mutex<VecDeque<Command>>>,
     tx: tokio::sync::broadcast::Sender<CommandResponse>,
     rx: tokio::sync::broadcast::Receiver<CommandResponse>,
+    #[allow(dead_code)]
     queue_handle: JoinHandle<()>,
 
     last_once: AtomicBool, // used to signal a drop
@@ -151,7 +152,7 @@ impl<D: Database + Send, P: PxlsClient + Send> CommandProcessorImpl<D, P> {
             .into_iter()
             .map(|rank| {
                 let record = database.get_user_record(&rank.username);
-                let record_exists = !record.is_err();
+                let record_exists = record.is_ok();
 
                 log::debug!("Record for {} exists? {}", rank.username, record_exists);
 
@@ -191,12 +192,10 @@ impl<D: Database + Send, P: PxlsClient + Send> CommandProcessorImpl<D, P> {
                     },
                     diff: if !record_exists {
                         rank.pixels
+                    } else if rank.pixels > 0 {
+                        rank.pixels - new_record.score.unwrap()
                     } else {
-                        if rank.pixels > 0 {
-                            rank.pixels - new_record.score.unwrap()
-                        } else {
-                            0
-                        }
+                        0
                     },
                 })
             })

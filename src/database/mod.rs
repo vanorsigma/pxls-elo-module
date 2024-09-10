@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS "users" (
             },
         };
 
-        Ok(Self::initialize_table_if_needed(connection)?)
+        Self::initialize_table_if_needed(connection)
     }
 }
 
@@ -80,7 +80,7 @@ impl Database for DatabaseConnection {
             })?
             .filter_map(|record| record.ok())
             .collect::<Vec<_>>()
-            .get(0)
+            .first()
             .cloned()
             .ok_or(anyhow!("record not found"));
         x

@@ -1,6 +1,5 @@
 //! Partial definition of types used in the response for stats.json
 
-use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1,8 +1,6 @@
 #![feature(duration_constructors)]
 use std::sync::Arc;
-use std::time::Duration;
 
-use futures::FutureExt;
 use pxls_elo_module::appstate;
 use pxls_elo_module::appstate::AppState;
 use pxls_elo_module::commandprocessor;
