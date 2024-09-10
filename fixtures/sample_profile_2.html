@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>jackhadfriends - pxls.space</title>
+    <link rel="stylesheet" href="/profile/css/theme-purple.min.css">
+    <link rel="stylesheet" href="/fontawesome-all.min.css">
+    <link rel="stylesheet" href="/profile/css/views/index.css">
+    <link rel="stylesheet" href="/SLIDEIN.css">
+    <script src="/jquery-3.4.1.min.js"></script>
+    <script src="/profile/js/bootstrap.bundle.min.js"></script>
+    <script src="/crel.min.js"></script>
+    <script src="/SLIDEIN.js"></script>
+</head>
+<body data-palette="ffffff,b9c3cf,777f8c,424651,1f1e26,000000,382215,7c3f20,c06f37,fead6c,ffd2b1,ffa4d0,f14fb4,e973ff,a630d2,531d8c,242367,0334bf,149cff,8df5ff,01bfa5,16777e,054523,18862f,61e021,b1ff37,ffffa5,fde111,ff9f17,f66e08,550022,99011a,f30f0c,ff7872" data-faction-max-tag="" data-faction-max-name="">
+<nav class="navbar navbar-dark navbar-expand-md" role="nav">
+    <ul class="navbar-nav mr-auto">
+        <li class="nav-item">
+            <a href="/" class="nav-link">pxls.space</a>
+        </li>
+        <li class="nav-item active">
+            <a href="/profile/jackhadfriends" class="nav-link">jackhadfriends&#x27;s Profile</a>
+        </li>
+    </ul>
+    <div class="my-2 my-lg-0">
+        <div class="dropdown">
+            <button class="navbar-text btn btn-link dropdown-toggle" type="button" data-toggle="dropdown" aria-expanded="false" aria-haspopup="true" id="btnNavUserDropdown">
+                <i class="fas fa-user-alt mr-1"></i>vanorsigma
+            </button>
+            <div class="dropdown-menu dropdown-menu-right" id="navUserDropdown" aria-labelledby="btnNavUserDropdown">
+                <a href="/profile?action=details" class="dropdown-item">My Profile</a>
+                <a href="/profile?action=factions" class="dropdown-item">My Factions</a>
+                <a href="/profile?action=data" class="dropdown-item">My Data</a>
+            </div>
+        </div>
+    </div>
+</nav>
+<main role="main" class="mb-3">
+    <div class="container">
+        <h1>[💜💔] jackhadfriends&#x27;s Profile</h1>
+        <hr>
+        <div class="row">
+            <div class="col-md-3">
+                <div class="list-group" id="tabsTriggers">
+                    <a href="/profile/jackhadfriends?action=details" data-action="details" class="list-group-item text-light active">
+                        <i class="fas fa-id-card mr-2 d-none d-md-inline-block"></i>Info
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-9 tab-content mt-3 mt-md-0" id="tabsWrapper">
+                <div id="tab-details" class="tab-pane text-center active" data-tab="details">
+                    <h3></h3>
+                    <table class="inline-block">
+                        <tbody>
+                        <tr>
+                            <th class="text-right pr-3">Registration Date</th>
+                            <td class="text-left">
+                                <time datetime=2024-06-30T21:13:56.583Z>
+                                    6/30/2024, 9:13:56 PM
+                                </time>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-right pr-3">Alltime Pixels</th>
+                            <td class="text-left number">32191</td>
+                        </tr>
+                        <tr>
+                            <th class="text-right pr-3">Current Canvas Pixels</th>
+                            <td class="text-left number">3023</td>
+                        </tr>
+                        <tr>
+                            <th class="text-right pr-3">Discord Tag</th>
+                            <td class="text-left">Not Set</td>
+                        </tr>
+                        <tr>
+                            <th class="text-right pr-3">Faction</th>
+                            <td class="text-left">[💜💔] Neuro-sama&#x27;s Swarm (ID: 3680)</td>
+                        </tr>
+                        <tr>
+                            <th class="text-right pr-3">Roles</th>
+                            <td class="text-left">
+                                <span class="text-muted">(None)</span>
+                            </td>
+                        </tr>
+                        </tbody>
+                    </table>
+                    <div class="d-block mt-4">
+                        View rankings and other stats <a href="/stats">here</a>.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+<div class="modal fade" id="modal-faction-search" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Find A Faction</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form action="#" class="form" id="frmFactionSearch">
+                    <div class="form-group">
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text" for="txtFactionSearch">Search:</label>
+                            </div>
+                            <input type="text" class="form-control" autocomplete="disabled" id="txtFactionSearch" required>
+                            <div class="input-group-append">
+                                <button class="btn btn-outline-info" type="submit" id="btnFactionSearch"><i class="fas fa-search"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div id="searchTarget" class="m-0 px-0 py-2">
+                    <p class="text-muted text-center">Enter a search term to get started.</p>
+                </div>
+                <button class="btn btn-block btn-sm btn-secondary d-none" id="btnFactionSearchLoadMore">Load More</button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/profile/js/views/root.js"></script>
+<script src="/profile/js/views/profile.js"></script>
+</body>
+</html>
