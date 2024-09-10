@@ -94,8 +94,8 @@ pub struct MockPxlsClient {
 impl Default for MockPxlsClient {
     fn default() -> Self {
         Self {
-            user_ranks_ret_val: Err(anyhow!("default value")),
-            user_profiles_ret_val: Err(anyhow!("default value")),
+            user_ranks_ret_val: Err(anyhow::anyhow!("default value")),
+            user_profiles_ret_val: Err(anyhow::anyhow!("default value")),
         }
     }
 }
@@ -105,14 +105,14 @@ impl PxlsClient for MockPxlsClient {
     async fn get_canvas_user_ranks(&self) -> Result<Vec<UserRank>, anyhow::Error> {
         self.user_ranks_ret_val
             .as_ref()
-            .map_err(|e| anyhow!("mock error {}", e))
+            .map_err(|e| anyhow::anyhow!("mock error {}", e))
             .cloned()
     }
 
-    async fn get_profile_for_user(&self, user_id: &str) -> Result<UserProfile, anyhow::Error> {
+    async fn get_profile_for_user(&self, _user_id: &str) -> Result<UserProfile, anyhow::Error> {
         self.user_profiles_ret_val
             .as_ref()
-            .map_err(|e| anyhow!("mock error {}", e))
+            .map_err(|e| anyhow::anyhow!("mock error {}", e))
             .cloned()
     }
 }
