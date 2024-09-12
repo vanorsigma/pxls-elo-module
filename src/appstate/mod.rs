@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use crate::{
     commandprocessor::{CommandProcessor, CommandProcessorImpl},
     database::{Database, DatabaseConnection, DatabaseConnectionCreater},
-    pxlsclient::{PxlsClient, PxlsReqwestClient},
+    pxlsclient::{PxlsClient, PxlsReqwestClient, WsHandlerImpl},
 };
 
 #[cfg(test)]
@@ -13,7 +13,7 @@ use crate::pxlsclient::MockPxlsClient;
 
 pub struct AppState<D: Database + Send, P: PxlsClient + Send, C: CommandProcessor<D, P>> {
     pub database: Arc<Mutex<D>>,
-    pub(super) pxlsclient: Arc<Mutex<P>>,
+    pub pxlsclient: Arc<Mutex<P>>,
     pub cmdprocessor: Arc<Mutex<Option<C>>>,
 }
 
@@ -33,7 +33,7 @@ pub fn new_real_appstate() -> Result<
     AppState<
         DatabaseConnection,
         PxlsReqwestClient,
-        CommandProcessorImpl<DatabaseConnection, PxlsReqwestClient>,
+        CommandProcessorImpl<DatabaseConnection, PxlsReqwestClient, WsHandlerImpl>,
     >,
     anyhow::Error,
 > {
@@ -57,7 +57,7 @@ pub fn new_memory_appstate() -> Result<
     AppState<
         DatabaseConnection,
         PxlsReqwestClient,
-        CommandProcessorImpl<DatabaseConnection, PxlsReqwestClient>,
+        CommandProcessorImpl<DatabaseConnection, PxlsReqwestClient, WsHandlerImpl>,
     >,
     anyhow::Error,
 > {
@@ -77,11 +77,14 @@ pub fn new_memory_appstate() -> Result<
 }
 
 #[cfg(test)]
+use crate::pxlsclient::MockWsHandler;
+
+#[cfg(test)]
 pub fn new_testing_appstate() -> Result<
     AppState<
         DatabaseConnection,
         MockPxlsClient,
-        CommandProcessorImpl<DatabaseConnection, MockPxlsClient>,
+        CommandProcessorImpl<DatabaseConnection, MockPxlsClient, MockWsHandler>,
     >,
     anyhow::Error,
 > {

@@ -1,7 +1,7 @@
 use profileparser::{ProfileParser, ProfileParserImpl};
-use types::{PxlsPixelResponse, PxlsResponse};
-pub use types::{UserProfile, UserRank};
-use wshandler::{WsHandler, WsHandlerImpl};
+use types::PxlsResponse;
+pub use types::{UserProfile, UserRank, PxlsPixelResponse, PixelUpdate, Pixel};
+pub use wshandler::{WsHandler, WsHandlerImpl};
 
 mod profileparser;
 mod types;
@@ -26,11 +26,11 @@ pub trait PxlsClient {
         &self,
     ) -> impl std::future::Future<Output = Result<impl WsHandler, anyhow::Error>> + Send;
 
-    fn get_username_for_pixel(
+    fn get_metadata_for_pixel(
         &self,
         x: u64,
         y: u64,
-    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send;
+    ) -> impl std::future::Future<Output = Result<PxlsPixelResponse, anyhow::Error>> + Send;
 }
 
 pub struct PxlsEndpoints {
@@ -102,11 +102,15 @@ impl PxlsClient for PxlsReqwestClient {
         .await
     }
 
-    async fn get_websocket_handler(&self) -> Result<impl WsHandler, anyhow::Error> {
+    async fn get_websocket_handler(&self) -> Result<WsHandlerImpl, anyhow::Error> {
         WsHandlerImpl::connect(&self.endpoints.ws, &self.cf_key).await
     }
 
-    async fn get_username_for_pixel(&self, x: u64, y: u64) -> Result<String, anyhow::Error> {
+    async fn get_metadata_for_pixel(
+        &self,
+        x: u64,
+        y: u64,
+    ) -> Result<PxlsPixelResponse, anyhow::Error> {
         Ok(self
             .perform_request(
                 &self
@@ -117,19 +121,18 @@ impl PxlsClient for PxlsReqwestClient {
             )
             .await
             .map(|result| result.json::<PxlsPixelResponse>())?
-            .await?
-            .username)
+            .await?)
     }
 }
 
 #[cfg(test)]
-use wshandler::MockWsHandler;
+pub use wshandler::MockWsHandler;
 
 #[cfg(test)]
 pub struct MockPxlsClient {
     pub user_ranks_ret_val: Result<Vec<UserRank>, anyhow::Error>,
     pub user_profiles_ret_val: Result<UserProfile, anyhow::Error>,
-    pub username_for_pixel_ret_val: Result<String, anyhow::Error>,
+    pub username_for_pixel_ret_val: Result<PxlsPixelResponse, anyhow::Error>,
 }
 
 #[cfg(test)]
@@ -163,7 +166,11 @@ impl PxlsClient for MockPxlsClient {
         Ok(MockWsHandler::default())
     }
 
-    async fn get_username_for_pixel(&self, _x: u64, _y: u64) -> Result<String, anyhow::Error> {
+    async fn get_metadata_for_pixel(
+        &self,
+        _x: u64,
+        _y: u64,
+    ) -> Result<PxlsPixelResponse, anyhow::Error> {
         self.username_for_pixel_ret_val
             .as_ref()
             .map_err(|e| anyhow::anyhow!("mock error {}", e))
@@ -213,10 +220,10 @@ mod tests {
         let pxls_cf_token = env::var("PXLS_CF_TOKEN").expect("please set PXLS_CF_TOKEN");
         let client = PxlsReqwestClient::new_with_token(&pxls_auth_token, &pxls_cf_token);
         let result = client
-            .get_username_for_pixel(1907, 528)
+            .get_metadata_for_pixel(1907, 528)
             .await
             .expect("should be able to perform the call");
 
-        println!("result: {result}");
+        println!("result: {:#?}", result);
     }
 }

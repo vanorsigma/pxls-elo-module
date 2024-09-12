@@ -52,7 +52,20 @@ async fn main() {
     let app_state = Arc::new(Mutex::new(
         appstate::new_real_appstate().expect("can create normal app state"),
     ));
-    commandprocessor::spawn_command_processor(app_state.clone()).await;
+
+    let ws_client = {
+        app_state
+            .lock()
+            .await
+            .pxlsclient
+            .lock()
+            .await
+            .get_websocket_handler()
+            .await
+            .unwrap()
+    };
+
+    commandprocessor::spawn_command_processor(app_state.clone(), ws_client).await;
 
     let mut recv = {
         let app_state_guard = app_state.lock().await;

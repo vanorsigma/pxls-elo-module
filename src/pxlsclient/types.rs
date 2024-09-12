@@ -18,9 +18,11 @@ pub(super) struct PxlsResponse {
     pub(super) toplist: TopList,
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct PxlsPixelResponse {
-    pub(super) username: String
+#[derive(Debug, Deserialize, Clone)]
+pub struct PxlsPixelResponse {
+    pub username: String,
+    #[serde(rename = "pixelCount")]
+    pub pixel_count: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -37,13 +39,13 @@ pub struct UserProfileBuilder {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Pixel {
-    x: u64,
-    y: u64
+    pub x: u64,
+    pub y: u64
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct PixelUpdate {
-    pixels: Vec<Pixel>,
+    pub pixels: Vec<Pixel>,
 }
 
 impl UserProfileBuilder {
