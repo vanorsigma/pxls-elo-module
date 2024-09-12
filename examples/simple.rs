@@ -1,12 +1,13 @@
 #![feature(duration_constructors)]
 use std::sync::Arc;
 
-use pxls_elo_module::appstate;
 use pxls_elo_module::appstate::AppState;
 use pxls_elo_module::commandprocessor;
 use pxls_elo_module::commandprocessor::CommandProcessor;
 use pxls_elo_module::database::Database;
 use pxls_elo_module::pxlsclient::PxlsClient;
+use pxls_elo_module::pxlstemplateclient::PxlsTemplateClient;
+use pxls_elo_module::{appstate, pxlstemplateclient};
 use tokio::sync::Mutex;
 
 async fn callback_get_statistics<
@@ -45,6 +46,25 @@ async fn callback_get_factions<
         });
 }
 
+async fn callback_update_template<
+    D: Database + Send + 'static,
+    P: PxlsClient + Send + 'static,
+    C: CommandProcessor<D, P>,
+>(
+    appstate: Arc<Mutex<AppState<D, P, C>>>,
+) {
+    let template_client = pxlstemplateclient::PxlsTemplateClientImpl::default();
+    let parameters = template_client
+        .get_template_parameters_from_url("https://temp.osupxls.ovh/?name=neurotemplate")
+        .await
+        .expect("can get template");
+
+    {
+        let app_state_lock = appstate.lock().await;
+        app_state_lock.parameters.lock().await.replace(parameters);
+    }
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -77,6 +97,7 @@ async fn main() {
 
     let mut timer_1 = tokio::time::interval(tokio::time::Duration::from_mins(30));
     let mut timer_2 = tokio::time::interval(tokio::time::Duration::from_hours(12));
+    let mut timer_3 = tokio::time::interval(tokio::time::Duration::from_mins(30));
 
     timer_2.tick().await; // don't want to update factions immediately
 
@@ -91,6 +112,10 @@ async fn main() {
 
             _ = timer_2.tick() => {
                 callback_get_factions(app_state.clone()).await;
+            }
+
+            _ = timer_3.tick() => {
+                callback_update_template(app_state.clone()).await;
             }
 
             Ok(response) = mut_receiver.recv() => {

@@ -9,7 +9,7 @@ mod types;
 use crate::{
     appstate::AppState,
     database::{types::UserRecord, Database},
-    pxlsclient::{PixelUpdate, PxlsClient, PxlsPixelResponse, UserRank, WsHandler},
+    pxlsclient::{PixelUpdate, PxlsClient, PxlsPixelResponse, UserRank, WsHandler}, pxlstemplateclient::FilledPixelCoordinatable,
 };
 use anyhow::anyhow;
 use tokio::{sync::Mutex, task::JoinHandle};
@@ -249,8 +249,19 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
             let app_state_unlocked = app_state.lock().await;
             let cmdprocessor = app_state_unlocked.cmdprocessor.lock().await;
             let pxlsclient = app_state_unlocked.pxlsclient.lock().await;
+            let parameters = app_state_unlocked.parameters.lock().await;
             log::debug!("Update from websockets acquired the series of locks");
 
+            let filled_squares = match parameters.as_ref() {
+                Some(param) => param.get_filled_pixel_coordinates(),
+                None => continue,
+            };
+
+            if !filled_squares.contains(&(pixel.x as u32, pixel.y as u32)) {
+                continue;
+            }
+
+            log::debug!("Requesting pixel data for {}, {}", pixel.x, pixel.y);
             let _ = pxlsclient
                 .get_metadata_for_pixel(pixel.x, pixel.y)
                 .await
@@ -265,6 +276,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
 
             // rudimentary rate-limiting
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            drop(parameters);
             drop(pxlsclient);
             drop(cmdprocessor);
             drop(app_state_unlocked);

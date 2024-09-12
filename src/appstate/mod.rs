@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use crate::{
     commandprocessor::{CommandProcessor, CommandProcessorImpl},
     database::{Database, DatabaseConnection, DatabaseConnectionCreater},
-    pxlsclient::{PxlsClient, PxlsReqwestClient, WsHandlerImpl},
+    pxlsclient::{PxlsClient, PxlsReqwestClient, WsHandlerImpl}, pxlstemplateclient::PxlsTemplateParameters,
 };
 
 #[cfg(test)]
@@ -15,6 +15,7 @@ pub struct AppState<D: Database + Send, P: PxlsClient + Send, C: CommandProcesso
     pub database: Arc<Mutex<D>>,
     pub pxlsclient: Arc<Mutex<P>>,
     pub cmdprocessor: Arc<Mutex<Option<C>>>,
+    pub parameters: Arc<Mutex<Option<PxlsTemplateParameters>>>,
 }
 
 impl<D: Database + Send, P: PxlsClient + Send, C: CommandProcessor<D, P>> Clone
@@ -25,6 +26,7 @@ impl<D: Database + Send, P: PxlsClient + Send, C: CommandProcessor<D, P>> Clone
             database: self.database.clone(),
             pxlsclient: self.pxlsclient.clone(),
             cmdprocessor: self.cmdprocessor.clone(),
+            parameters: self.parameters.clone(),
         }
     }
 }
@@ -49,6 +51,7 @@ pub fn new_real_appstate() -> Result<
             &pxls_cf_token,
         ))),
         cmdprocessor: Arc::new(Mutex::new(None)),
+        parameters: Arc::new(Mutex::new(None)),
     })
 }
 
@@ -73,6 +76,7 @@ pub fn new_memory_appstate() -> Result<
             &pxls_cf_token,
         ))),
         cmdprocessor: Arc::new(Mutex::new(None)),
+        parameters: Arc::new(Mutex::new(None)),
     })
 }
 
@@ -94,5 +98,6 @@ pub fn new_testing_appstate() -> Result<
         )),
         pxlsclient: Arc::new(Mutex::new(MockPxlsClient::default())),
         cmdprocessor: Arc::new(Mutex::new(None)),
+        parameters: Arc::new(Mutex::new(None))
     })
 }
