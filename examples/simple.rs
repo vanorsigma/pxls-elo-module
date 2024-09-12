@@ -53,9 +53,17 @@ async fn callback_update_template<
 >(
     appstate: Arc<Mutex<AppState<D, P, C>>>,
 ) {
+    let template_url = match std::env::var("PXLS_CANVAS_TEMPLATE") {
+        Ok(s) => s,
+        Err(_) => {
+            log::info!("No canvas template env variable, not updating template");
+            return;
+        }
+    };
+
     let template_client = pxlstemplateclient::PxlsTemplateClientImpl::default();
     let parameters = template_client
-        .get_template_parameters_from_url("https://temp.osupxls.ovh/?name=neurotemplate")
+        .get_template_parameters_from_url(&template_url)
         .await
         .expect("can get template");
 
