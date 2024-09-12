@@ -1,26 +1,43 @@
 use profileparser::{ProfileParser, ProfileParserImpl};
-use types::PxlsResponse;
+use types::{PxlsPixelResponse, PxlsResponse};
 pub use types::{UserProfile, UserRank};
+use wshandler::{WsHandler, WsHandlerImpl};
 
 mod profileparser;
 mod types;
+mod wshandler;
 
 const DEFAULT_STATS_URL: &str = "https://pxls.space/stats/stats.json";
 const DEFAULT_PROFILE_URL: &str = "https://pxls.space/profile/{user_id}";
+const DEFAULT_WS_URL: &str = "wss://pxls.space/ws";
+const DEFAULT_LOOKUP_URL: &str = "https://pxls.space/lookup?x={x}&y={y}";
 
 pub trait PxlsClient {
     fn get_canvas_user_ranks(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<UserRank>, anyhow::Error>> + Send;
+
     fn get_profile_for_user(
         &self,
         user_id: &str,
     ) -> impl std::future::Future<Output = Result<UserProfile, anyhow::Error>> + std::marker::Send;
+
+    fn get_websocket_handler(
+        &self,
+    ) -> impl std::future::Future<Output = Result<impl WsHandler, anyhow::Error>> + Send;
+
+    fn get_username_for_pixel(
+        &self,
+        x: u64,
+        y: u64,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send;
 }
 
 pub struct PxlsEndpoints {
     stats: String,
     profile: String,
+    ws: String,
+    lookup: String,
 }
 
 pub struct PxlsReqwestClient {
@@ -34,6 +51,8 @@ impl Default for PxlsEndpoints {
         Self {
             stats: DEFAULT_STATS_URL.to_string(),
             profile: DEFAULT_PROFILE_URL.to_string(),
+            ws: DEFAULT_WS_URL.to_string(),
+            lookup: DEFAULT_LOOKUP_URL.to_string(),
         }
     }
 }
@@ -82,12 +101,35 @@ impl PxlsClient for PxlsReqwestClient {
         )
         .await
     }
+
+    async fn get_websocket_handler(&self) -> Result<impl WsHandler, anyhow::Error> {
+        WsHandlerImpl::connect(&self.endpoints.ws, &self.cf_key).await
+    }
+
+    async fn get_username_for_pixel(&self, x: u64, y: u64) -> Result<String, anyhow::Error> {
+        Ok(self
+            .perform_request(
+                &self
+                    .endpoints
+                    .lookup
+                    .replace("{x}", &x.to_string())
+                    .replace("{y}", &y.to_string()),
+            )
+            .await
+            .map(|result| result.json::<PxlsPixelResponse>())?
+            .await?
+            .username)
+    }
 }
+
+#[cfg(test)]
+use wshandler::MockWsHandler;
 
 #[cfg(test)]
 pub struct MockPxlsClient {
     pub user_ranks_ret_val: Result<Vec<UserRank>, anyhow::Error>,
     pub user_profiles_ret_val: Result<UserProfile, anyhow::Error>,
+    pub username_for_pixel_ret_val: Result<String, anyhow::Error>,
 }
 
 #[cfg(test)]
@@ -96,6 +138,7 @@ impl Default for MockPxlsClient {
         Self {
             user_ranks_ret_val: Err(anyhow::anyhow!("default value")),
             user_profiles_ret_val: Err(anyhow::anyhow!("default value")),
+            username_for_pixel_ret_val: Err(anyhow::anyhow!("default value")),
         }
     }
 }
@@ -111,6 +154,17 @@ impl PxlsClient for MockPxlsClient {
 
     async fn get_profile_for_user(&self, _user_id: &str) -> Result<UserProfile, anyhow::Error> {
         self.user_profiles_ret_val
+            .as_ref()
+            .map_err(|e| anyhow::anyhow!("mock error {}", e))
+            .cloned()
+    }
+
+    async fn get_websocket_handler(&self) -> Result<impl WsHandler, anyhow::Error> {
+        Ok(MockWsHandler::default())
+    }
+
+    async fn get_username_for_pixel(&self, _x: u64, _y: u64) -> Result<String, anyhow::Error> {
+        self.username_for_pixel_ret_val
             .as_ref()
             .map_err(|e| anyhow::anyhow!("mock error {}", e))
             .cloned()
@@ -150,5 +204,19 @@ mod tests {
 
         assert_eq!(result.discord_tag, Some("superbox2147".to_string()));
         assert_eq!(result.faction_id, Some(3680));
+    }
+
+    #[ignore = "This is a live environment test, which requires live credentials"]
+    #[tokio::test]
+    async fn test_username_for_pixel_profile_request() {
+        let pxls_auth_token = env::var("PXLS_AUTH_TOKEN").expect("please set PXLS_AUTH_TOKEN");
+        let pxls_cf_token = env::var("PXLS_CF_TOKEN").expect("please set PXLS_CF_TOKEN");
+        let client = PxlsReqwestClient::new_with_token(&pxls_auth_token, &pxls_cf_token);
+        let result = client
+            .get_username_for_pixel(1907, 528)
+            .await
+            .expect("should be able to perform the call");
+
+        println!("result: {result}");
     }
 }

@@ -18,6 +18,11 @@ pub(super) struct PxlsResponse {
     pub(super) toplist: TopList,
 }
 
+#[derive(Debug, Deserialize)]
+pub(super) struct PxlsPixelResponse {
+    pub(super) username: String
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct UserProfile {
     pub discord_tag: Option<String>,
@@ -28,6 +33,17 @@ pub struct UserProfile {
 pub struct UserProfileBuilder {
     discord_tag: Option<String>,
     faction_id: Option<u64>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Pixel {
+    x: u64,
+    y: u64
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PixelUpdate {
+    pixels: Vec<Pixel>,
 }
 
 impl UserProfileBuilder {
