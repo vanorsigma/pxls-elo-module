@@ -73,6 +73,20 @@ async fn callback_update_template<
     }
 }
 
+async fn callback_print_queue_length<
+    D: Database + Send + 'static,
+    P: PxlsClient + Send + 'static,
+    C: CommandProcessor<D, P>,
+>(
+    appstate: Arc<Mutex<AppState<D, P, C>>>,
+) {
+    let app_state_lock = appstate.lock().await;
+    let cmd_processor = app_state_lock.cmdprocessor.lock().await;
+    cmd_processor
+        .as_ref()
+        .map(|processor| log::info!("Queue length currently at {}", processor.queue_len()));
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -106,6 +120,7 @@ async fn main() {
     let mut timer_1 = tokio::time::interval(tokio::time::Duration::from_mins(30));
     let mut timer_2 = tokio::time::interval(tokio::time::Duration::from_hours(12));
     let mut timer_3 = tokio::time::interval(tokio::time::Duration::from_mins(30));
+    let mut timer_4 = tokio::time::interval(tokio::time::Duration::from_secs(5));
 
     timer_2.tick().await; // don't want to update factions immediately
 
@@ -124,6 +139,10 @@ async fn main() {
 
             _ = timer_3.tick() => {
                 callback_update_template(app_state.clone()).await;
+            }
+
+            _ = timer_4.tick() => {
+                callback_print_queue_length(app_state.clone()).await;
             }
 
             Ok(response) = mut_receiver.recv() => {

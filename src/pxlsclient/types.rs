@@ -25,16 +25,18 @@ pub struct PxlsPixelResponse {
     pub pixel_count: u64,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct UserProfile {
     pub discord_tag: Option<String>,
     pub faction_id: Option<u64>,
+    pub pixels: Option<u64>,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct UserProfileBuilder {
     discord_tag: Option<String>,
     faction_id: Option<u64>,
+    pixels: Option<u64>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -59,10 +61,16 @@ impl UserProfileBuilder {
         self
     }
 
+    pub fn pixels(mut self, pixels: u64) -> Self {
+        self.pixels = Some(pixels);
+        self
+    }
+
     pub fn build(self) -> Result<UserProfile, anyhow::Error> {
         Ok(UserProfile {
             discord_tag: self.discord_tag,
             faction_id: self.faction_id,
+            pixels: self.pixels,
         })
     }
 }

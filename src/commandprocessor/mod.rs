@@ -331,6 +331,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
         let mut user = database.get_user_record(username)?;
         user.faction = profile.faction_id;
         user.discord_tag = profile.discord_tag;
+        user.score = profile.pixels;
         database.insert_user_record(user)?;
 
         Ok(())
@@ -625,6 +626,7 @@ mod tests {
                 &mut Ok(UserProfile {
                     discord_tag: Some("vanorsigma".to_string()),
                     faction_id: Some(69420),
+                    pixels: Some(123),
                 }),
             );
         }
@@ -691,6 +693,7 @@ mod tests {
                 &mut Ok(UserProfile {
                     discord_tag: Some("vanorsigma".to_string()),
                     faction_id: Some(69420),
+                    pixels: Some(123),
                 }),
             );
             mem::swap(
