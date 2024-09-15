@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use futures::StreamExt;
+use futures_retry::{RetryPolicy, StreamRetryExt};
 use tokio_tungstenite::connect_async;
 
 use super::types::PixelUpdate;
@@ -8,7 +11,9 @@ pub trait WsHandler {
 
     fn resusbcribe(&self) -> Self::Receiver;
 
-    fn try_recv(&mut self) -> impl std::future::Future<Output = Result<PixelUpdate, anyhow::Error>> + std::marker::Send;
+    fn try_recv(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<PixelUpdate, anyhow::Error>> + std::marker::Send;
 }
 
 pub struct WsHandlerImpl {
@@ -34,14 +39,17 @@ impl WsHandlerImpl {
             .header("X-Pxls-CFAuth", cf_key)
             .body(())
             .unwrap();
-        let (ws_stream, _) = connect_async(request).await?;
+        let ws_stream = connect_async(request).await?.0.retry(|e| {
+            log::error!("Something happened to the websocket {}", e);
+            RetryPolicy::WaitRetry::<tokio_tungstenite::tungstenite::Error>(Duration::from_secs(5))
+        });
         let (tx, rx) = tokio::sync::broadcast::channel(10);
 
         let handle = tokio::spawn(async move {
             ws_stream
                 .for_each(|msg_maybe| async {
                     let _ = msg_maybe
-                        .map(|msg| {
+                        .map(|(msg, _)| {
                             let _ = msg
                                 .into_text()
                                 .map(|text| {
@@ -57,7 +65,7 @@ impl WsHandlerImpl {
                                     log::warn!("message is not text (probably a ping) {e}")
                                 });
                         })
-                        .inspect_err(|e| log::error!("can't get message due to {e}"));
+                        .inspect_err(|(e, _)| log::error!("can't get message due to {e}"));
                 })
                 .await;
         });
