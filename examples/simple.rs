@@ -10,6 +10,8 @@ use pxls_elo_module::pxlstemplateclient::PxlsTemplateClient;
 use pxls_elo_module::{appstate, pxlstemplateclient};
 use tokio::sync::Mutex;
 
+const SCORE_FACTION_ID_TO_MATCH: u64 = 1;
+
 async fn callback_get_statistics<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
@@ -87,6 +89,30 @@ async fn callback_print_queue_length<
         .map(|processor| log::info!("Queue length currently at {}", processor.queue_len()));
 }
 
+async fn callback_get_score<
+    D: Database + Send + 'static,
+    P: PxlsClient + Send + 'static,
+    C: CommandProcessor<D, P>,
+>(
+    appstate: Arc<Mutex<AppState<D, P, C>>>,
+    faction_id: u64,
+) {
+    let appstate_lock_guard = appstate.lock().await;
+    let cmd_processor_lock_guard = appstate_lock_guard.cmdprocessor.lock().await;
+    let cmd_processor = cmd_processor_lock_guard.as_ref().unwrap();
+    let database = appstate_lock_guard.database.lock().await;
+
+    database
+        .get_all_users()
+        .unwrap()
+        .into_iter()
+        .filter(|record| record.faction == Some(faction_id))
+        .for_each(|record| {
+            cmd_processor
+                .queue_command(commandprocessor::Command::UpdateScore(record.pxls_username))
+        });
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -121,6 +147,7 @@ async fn main() {
     let mut timer_2 = tokio::time::interval(tokio::time::Duration::from_hours(12));
     let mut timer_3 = tokio::time::interval(tokio::time::Duration::from_mins(30));
     let mut timer_4 = tokio::time::interval(tokio::time::Duration::from_secs(5));
+    let mut timer_5 = tokio::time::interval(tokio::time::Duration::from_secs(5));
 
     timer_2.tick().await; // don't want to update factions immediately
 
@@ -143,6 +170,10 @@ async fn main() {
 
             _ = timer_4.tick() => {
                 callback_print_queue_length(app_state.clone()).await;
+            }
+
+            _ = timer_5.tick() => {
+                callback_get_score(app_state.clone(), SCORE_FACTION_ID_TO_MATCH).await;
             }
 
             Ok(response) = mut_receiver.recv() => {

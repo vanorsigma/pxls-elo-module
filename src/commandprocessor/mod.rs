@@ -20,6 +20,7 @@ pub enum Command {
     UpdateFromWebSocketAfterMetadata(PxlsPixelResponse),
     UpdateStatistics,
     UpdateFaction(String),
+    UpdateScore(String),
 }
 
 #[non_exhaustive]
@@ -336,6 +337,30 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
 
         Ok(())
     }
+
+    /// This does the same thing as update_factions, but ONLY touches the scores
+    async fn update_score(
+        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        username: &str,
+    ) -> Result<(), anyhow::Error> {
+        log::debug!("Score update is acquiring a series of locks...");
+        let app_state = app_state.lock().await;
+        let pxlsclient = app_state.pxlsclient.lock().await;
+        let database = app_state.database.lock().await;
+        log::debug!("Score has acquired locks");
+
+        let profile = pxlsclient.get_profile_for_user(username).await?;
+        log::debug!("Factions have acquired profile for {}", username);
+
+        // rudimentary rate-limiting (TODO: possibly use a shared sleep / interval or something)
+        tokio::time::sleep(time::Duration::from_millis(500)).await;
+
+        let mut user = database.get_user_record(username)?;
+        user.score = profile.pixels;
+        database.insert_user_record(user)?;
+
+        Ok(())
+    }
 }
 
 impl<
@@ -400,6 +425,19 @@ impl<
                         }
                         Err(e) => {
                             log::error!("problem while updating faction for user {}", e)
+                        }
+                    }
+                });
+            },
+            Command::UpdateScore(user) => {
+                log::debug!("Update score command...");
+                tokio::task::spawn(async move {
+                    match Self::update_score(app_state, &user).await {
+                        Ok(_) => {
+                            log::info!("{}'s score was updated", user);
+                        }
+                        Err(e) => {
+                            log::error!("proiblem while updating score {}", e)
                         }
                     }
                 });
@@ -760,5 +798,79 @@ mod tests {
 
         assert_eq!(record.discord_tag, Some("vanorsigma".to_string()));
         assert_eq!(record.faction, Some(69420));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_update_score_with_queue() {
+        let testing_appstate = new_testing_appstate().expect("can create test appstate");
+        {
+            // with pxls lock
+            let mut pxclient = testing_appstate.pxlsclient.lock().await;
+            mem::swap(
+                &mut pxclient.user_ranks_ret_val,
+                &mut Ok(vec![UserRank {
+                    username: "vanorsigma".to_string(),
+                    pixels: 123,
+                }]),
+            );
+            mem::swap(
+                &mut pxclient.user_profiles_ret_val,
+                &mut Ok(UserProfile {
+                    discord_tag: Some("vanorsigma".to_string()),
+                    faction_id: Some(69420),
+                    pixels: Some(123),
+                }),
+            );
+        }
+
+        let app_state = Arc::new(Mutex::new(testing_appstate));
+        super::spawn_command_processor(app_state.clone(), MockWsHandler::default()).await;
+
+        {
+            let app_state_lock = app_state.lock().await;
+            let database = app_state_lock.database.lock().await;
+            let mut cmd_processor_lock = app_state_lock.cmdprocessor.lock().await;
+            let cmd_processor = cmd_processor_lock.as_mut().unwrap();
+
+            database
+                .insert_user_record(UserRecord {
+                    pxls_username: "vanorsigma".to_string(),
+                    discord_tag: Some("vanorsigma".to_string()),
+                    faction: Some(69420),
+                    score: Some(123),
+                    dirty_slate: Some(1),
+                })
+                .expect("can insert initial value into the database");
+            cmd_processor.queue_command(super::Command::UpdateScore("vanorsigma".to_string()));
+
+            // forces the queue to terminate; this guarantees that the command has been processed
+            let mut extracted_handle = tokio::task::spawn(async move {});
+            std::mem::swap(&mut cmd_processor.queue_handle, &mut extracted_handle);
+            cmd_processor
+                .last_once
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+
+            drop(database);
+            drop(cmd_processor_lock);
+            drop(app_state_lock);
+
+            // i know this is scuffed, but delay for a second so that we can turn off the processor
+            if !extracted_handle.is_finished() {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let _ = timeout(Duration::from_secs(5), extracted_handle)
+                    .await
+                    .expect("extracted handle timeouts after 5 seconds")
+                    .expect("should be able to await from extracted handle");
+            }
+        }
+
+        let app_state_lock = app_state.lock().await;
+        let database = app_state_lock.database.lock().await;
+        let record = database
+            .get_user_record("vanorsigma")
+            .expect("can get the record");
+
+        assert_eq!(record.discord_tag, Some("vanorsigma".to_string()));
+        assert_eq!(record.score, Some(123));
     }
 }
