@@ -9,7 +9,9 @@ mod types;
 use crate::{
     appstate::AppState,
     database::{types::UserRecord, Database},
-    pxlsclient::{PixelUpdate, PxlsClient, PxlsPixelResponse, UserRank, WsHandler}, pxlstemplateclient::FilledPixelCoordinatable,
+    pxlsclient::{PixelUpdate, PxlsClient, PxlsPixelResponse, UserRank, WsHandler},
+    pxlstemplateclient::FilledPixelCoordinatable,
+    rentryclient::RentryClient,
 };
 use anyhow::anyhow;
 use tokio::{sync::Mutex, task::JoinHandle};
@@ -21,6 +23,7 @@ pub enum Command {
     UpdateStatistics,
     UpdateFaction(String),
     UpdateScore(String),
+    UpdateUsersFromURL(String, u64),
 }
 
 #[non_exhaustive]
@@ -47,6 +50,7 @@ pub trait CommandProcessorInternal<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
     W: WsHandler + Send + 'static,
+    R: RentryClient + Send + 'static,
     C: CommandProcessor<D, P>,
 >
 {
@@ -58,7 +62,7 @@ pub trait CommandProcessorInternal<
     /// Creates Self, injecting the handle into the CommandProcessor
     /// It is the implementers responsibility to cause do_once to return false once the implementor is dropped
     fn inject_command_processor_into_appstate(
-        app_state: Arc<Mutex<AppState<D, P, C>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, C>>>,
         ws_handler: W,
         handle: JoinHandle<()>,
     ) -> impl std::future::Future<Output = ()> + Send;
@@ -68,8 +72,9 @@ pub struct CommandProcessorImpl<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
     W: WsHandler + Send + 'static,
+    R: RentryClient + Send + 'static,
 > {
-    app_state: Arc<Mutex<AppState<D, P, Self>>>,
+    app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
     queue: Arc<Mutex<VecDeque<Command>>>,
     tx: tokio::sync::broadcast::Sender<CommandResponse>,
     rx: tokio::sync::broadcast::Receiver<CommandResponse>,
@@ -89,8 +94,12 @@ fn extract_result_vec_error<T, E>(vector: Vec<Result<T, E>>) -> Result<Vec<T>, E
     Ok(result_without_error)
 }
 
-impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send + Sync>
-    CommandProcessorInternal<D, P, W, Self> for CommandProcessorImpl<D, P, W>
+impl<
+        D: Database + Send,
+        P: PxlsClient + Send,
+        W: WsHandler + Send + Sync,
+        R: RentryClient + Send,
+    > CommandProcessorInternal<D, P, W, R, Self> for CommandProcessorImpl<D, P, W, R>
 {
     async fn do_once(&mut self) -> bool {
         if self.last_once.load(std::sync::atomic::Ordering::Relaxed) {
@@ -102,14 +111,17 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send + Sync>
         }
 
         while let Ok(pixel_update) = self.ws.try_recv().await {
-            self.queue.lock().await.push_back(Command::UpdateFromWebSocket(pixel_update));
+            self.queue
+                .lock()
+                .await
+                .push_back(Command::UpdateFromWebSocket(pixel_update));
         }
 
         true
     }
 
     async fn inject_command_processor_into_appstate(
-        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
         ws: W,
         handle: JoinHandle<()>,
     ) {
@@ -134,8 +146,8 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send + Sync>
     }
 }
 
-impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> Drop
-    for CommandProcessorImpl<D, P, W>
+impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send, R: RentryClient + Send> Drop
+    for CommandProcessorImpl<D, P, W, R>
 {
     fn drop(&mut self) {
         self.last_once
@@ -144,7 +156,9 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> Drop
     }
 }
 
-impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProcessorImpl<D, P, W> {
+impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send, R: RentryClient + Send>
+    CommandProcessorImpl<D, P, W, R>
+{
     fn update_statistic_for(
         cmdprocessor: Option<&Self>,
         database: &D,
@@ -200,7 +214,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
     }
 
     async fn update_statistics(
-        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
     ) -> Result<Vec<UserRankResponse>, anyhow::Error> {
         log::debug!("Updating statistics!");
         let user_ranks = {
@@ -238,7 +252,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
     }
 
     async fn update_from_websocket(
-        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
         pixel_update: PixelUpdate,
     ) {
         for pixel in pixel_update.pixels {
@@ -271,7 +285,8 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
                 })
                 .map(|metadata| {
                     cmdprocessor.as_ref().map(|processor| {
-                        processor.queue_command(Command::UpdateFromWebSocketAfterMetadata(metadata));
+                        processor
+                            .queue_command(Command::UpdateFromWebSocketAfterMetadata(metadata));
                     });
                 });
 
@@ -285,7 +300,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
     }
 
     async fn update_from_websocket_lookup_response(
-        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
         response: PxlsPixelResponse,
     ) -> Result<UserRankResponse, anyhow::Error> {
         log::debug!(
@@ -305,7 +320,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
     }
 
     async fn update_faction(
-        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
         username: &str,
     ) -> Result<(), anyhow::Error> {
         log::debug!("Factions is acquiring a series of locks...");
@@ -330,7 +345,11 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
         tokio::time::sleep(time::Duration::from_secs(1)).await;
 
         let mut user = database.get_user_record(username)?;
-        user.faction = profile.faction_id;
+        if let Some(faction) = user.faction {
+            if !app_state.ignore_factions_list.contains(&faction) {
+                user.faction = profile.faction_id;
+            }
+        }
         user.discord_tag = profile.discord_tag;
         user.score = profile.pixels;
         database.insert_user_record(user)?;
@@ -340,7 +359,7 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
 
     /// This does the same thing as update_factions, but ONLY touches the scores
     async fn update_score(
-        app_state: Arc<Mutex<AppState<D, P, Self>>>,
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
         username: &str,
     ) -> Result<(), anyhow::Error> {
         log::debug!("Score update is acquiring a series of locks...");
@@ -356,8 +375,56 @@ impl<D: Database + Send, P: PxlsClient + Send, W: WsHandler + Send> CommandProce
         tokio::time::sleep(time::Duration::from_millis(500)).await;
 
         let mut user = database.get_user_record(username)?;
+        user.discord_tag = profile.discord_tag;
         user.score = profile.pixels;
         database.insert_user_record(user)?;
+
+        Ok(())
+    }
+
+    async fn update_users_from_url(
+        app_state: Arc<Mutex<AppState<D, P, R, Self>>>,
+        url: &str,
+        faction_id: u64,
+    ) -> Result<(), anyhow::Error> {
+        log::debug!("Update users acquring a series of locks...");
+        let app_state_unlocked = app_state.lock().await;
+        let database = app_state_unlocked.database.lock().await;
+        let rentry = app_state_unlocked.rentry.lock().await;
+        let cmdprocessor = app_state_unlocked.cmdprocessor.lock().await;
+
+        log::debug!("Update users acquired locks");
+        rentry
+            .get_users_from_url(url)
+            .await?
+            .iter()
+            .map(|entry| -> Result<_, anyhow::Error> {
+                let record = match database.get_user_record(&entry) {
+                    Ok(mut record) => {
+                        record.faction = Some(faction_id);
+                        record
+                    }
+                    Err(_) => UserRecord {
+                        pxls_username: entry.to_string(),
+                        discord_tag: None,
+                        faction: Some(faction_id),
+                        score: Some(0),
+                        dirty_slate: Some(0),
+                    },
+                };
+
+                database
+                    .insert_user_record(record)
+                    .map_err(|e| anyhow!(e))?;
+
+                Ok(cmdprocessor
+                    .as_ref()
+                    .map(|processor| {
+                        processor.queue_command(Command::UpdateScore(entry.to_string()))
+                    })
+                    .ok_or(anyhow!("no processor found"))?)
+            })
+            .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
         Ok(())
     }
@@ -367,7 +434,8 @@ impl<
         D: Database + Send + 'static,
         P: PxlsClient + Send + 'static,
         W: WsHandler + Send + 'static,
-    > CommandProcessorImpl<D, P, W>
+        R: RentryClient + Send + 'static,
+    > CommandProcessorImpl<D, P, W, R>
 {
     fn process_command(&self, cmd: Command) {
         let app_state = self.app_state.clone();
@@ -375,9 +443,9 @@ impl<
         match cmd {
             Command::UpdateFromWebSocket(value) => {
                 log::debug!("Updating from websocket");
-                tokio::task::spawn(async move {
-                    Self::update_from_websocket(app_state, value).await
-                });
+                tokio::task::spawn(
+                    async move { Self::update_from_websocket(app_state, value).await },
+                );
             }
 
             Command::UpdateFromWebSocketAfterMetadata(value) => {
@@ -428,7 +496,7 @@ impl<
                         }
                     }
                 });
-            },
+            }
             Command::UpdateScore(user) => {
                 log::debug!("Update score command...");
                 tokio::task::spawn(async move {
@@ -437,7 +505,20 @@ impl<
                             log::info!("{}'s score was updated", user);
                         }
                         Err(e) => {
-                            log::error!("proiblem while updating score {}", e)
+                            log::error!("problem while updating score {}", e)
+                        }
+                    }
+                });
+            }
+            Command::UpdateUsersFromURL(url, faction_id) => {
+                log::debug!("Update from URL");
+                tokio::task::spawn(async move {
+                    match Self::update_users_from_url(app_state, &url, faction_id).await {
+                        Ok(_) => {
+                            log::info!("Updated from URL");
+                        }
+                        Err(e) => {
+                            log::error!("problem while processing update users from url {}", e)
                         }
                     }
                 });
@@ -450,7 +531,8 @@ impl<
         D: Database + Send + 'static,
         P: PxlsClient + Send + 'static,
         W: WsHandler + Send + 'static,
-    > CommandProcessor<D, P> for CommandProcessorImpl<D, P, W>
+        R: RentryClient + Send + 'static,
+    > CommandProcessor<D, P> for CommandProcessorImpl<D, P, W, R>
 {
     type ChannelType = tokio::sync::broadcast::Receiver<CommandResponse>;
 
@@ -471,9 +553,10 @@ pub async fn spawn_command_processor<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
     W: WsHandler + Send + 'static,
-    C: CommandProcessor<D, P> + CommandProcessorInternal<D, P, W, C> + Send + 'static,
+    R: RentryClient + Send + 'static,
+    C: CommandProcessor<D, P> + CommandProcessorInternal<D, P, W, R, C> + Send + 'static,
 >(
-    app_state: Arc<Mutex<AppState<D, P, C>>>,
+    app_state: Arc<Mutex<AppState<D, P, R, C>>>,
     ws: W,
 ) {
     let app_state_arc = app_state.clone();
@@ -518,7 +601,7 @@ mod tests {
     async fn test_real_update_statistics() {
         env_logger::init();
         let app_state = Arc::new(Mutex::new(
-            new_memory_appstate().expect("can create app state"),
+            new_memory_appstate(vec![]).expect("can create app state"),
         ));
 
         let ws_client = {
@@ -872,5 +955,78 @@ mod tests {
 
         assert_eq!(record.discord_tag, Some("vanorsigma".to_string()));
         assert_eq!(record.score, Some(123));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_update_users_from_url() {
+        env_logger::init();
+        let mut testing_appstate = new_testing_appstate().expect("can create test appstate");
+        {
+            // prime ignore list with 420
+            testing_appstate.ignore_factions_list.push(420);
+
+            // with rentry lock
+            let mut rentry = testing_appstate.rentry.lock().await;
+            mem::swap(
+                &mut rentry.get_users_from_url_response,
+                &mut Ok(vec!["vanorsigma".to_string()]),
+            );
+
+            // with pxls lock
+            let mut pxclient = testing_appstate.pxlsclient.lock().await;
+            mem::swap(
+                &mut pxclient.user_profiles_ret_val,
+                &mut Ok(UserProfile {
+                    discord_tag: Some("vanorsigma".to_string()),
+                    faction_id: Some(69420),
+                    pixels: Some(123),
+                }),
+            );
+            mem::swap(
+                &mut pxclient.username_for_pixel_ret_val,
+                &mut Ok(PxlsPixelResponse {
+                    username: "vanorsigma".to_string(),
+                    pixel_count: 123,
+                }),
+            );
+        }
+
+        let app_state = Arc::new(Mutex::new(testing_appstate));
+        super::spawn_command_processor(app_state.clone(), MockWsHandler::default()).await;
+
+        {
+            let app_state_lock = app_state.lock().await;
+            let mut cmd_processor_lock = app_state_lock.cmdprocessor.lock().await;
+            let cmd_processor = cmd_processor_lock.as_mut().unwrap();
+
+            cmd_processor.process_command(super::Command::UpdateUsersFromURL("does not matter".to_string(), 420));
+
+            // forces the queue to terminate; this guarantees that the command has been processed
+            let mut extracted_handle = tokio::task::spawn(async move {});
+            std::mem::swap(&mut cmd_processor.queue_handle, &mut extracted_handle);
+            cmd_processor
+                .last_once
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+
+            drop(cmd_processor_lock);
+            drop(app_state_lock);
+
+            // i know this is scuffed, but delay for a second so that we can turn off the processor
+            if !extracted_handle.is_finished() {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let _ = timeout(Duration::from_secs(5), extracted_handle)
+                    .await
+                    .expect("extracted handle timeouts after 5 seconds")
+                    .expect("should be able to await from extracted handle");
+            }
+        }
+
+        let app_state_lock = app_state.lock().await;
+        let database = app_state_lock.database.lock().await;
+        let record = database
+            .get_user_record("vanorsigma")
+            .expect("can get the record");
+
+        assert_eq!(record.faction, Some(420));
     }
 }

@@ -3,3 +3,4 @@ pub mod commandprocessor;
 pub mod database;
 pub mod pxlsclient;
 pub mod pxlstemplateclient;
+pub mod rentryclient;

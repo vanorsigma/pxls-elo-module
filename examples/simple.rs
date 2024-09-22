@@ -7,17 +7,20 @@ use pxls_elo_module::commandprocessor::CommandProcessor;
 use pxls_elo_module::database::Database;
 use pxls_elo_module::pxlsclient::PxlsClient;
 use pxls_elo_module::pxlstemplateclient::PxlsTemplateClient;
+use pxls_elo_module::rentryclient::RentryClient;
 use pxls_elo_module::{appstate, pxlstemplateclient};
 use tokio::sync::Mutex;
 
-const SCORE_FACTION_ID_TO_MATCH: u64 = 1;
+const SCORE_FACTION_ID_TO_MATCH: u64 = 3680;
+const USERS_LIST: &str = "https://rentry.org/swarm-pxls/raw";
 
 async fn callback_get_statistics<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
+    R: RentryClient + Send + 'static,
     C: CommandProcessor<D, P>,
 >(
-    appstate: Arc<Mutex<AppState<D, P, C>>>,
+    appstate: Arc<Mutex<AppState<D, P, R, C>>>,
 ) {
     let appstate_lock_guard = appstate.lock().await;
     let cmd_processor_lock_guard = appstate_lock_guard.cmdprocessor.lock().await;
@@ -28,9 +31,10 @@ async fn callback_get_statistics<
 async fn callback_get_factions<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
+    R: RentryClient + Send,
     C: CommandProcessor<D, P>,
 >(
-    appstate: Arc<Mutex<AppState<D, P, C>>>,
+    appstate: Arc<Mutex<AppState<D, P, R, C>>>,
 ) {
     let appstate_lock_guard = appstate.lock().await;
     let cmd_processor_lock_guard = appstate_lock_guard.cmdprocessor.lock().await;
@@ -51,9 +55,10 @@ async fn callback_get_factions<
 async fn callback_update_template<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
+    R: RentryClient + Send,
     C: CommandProcessor<D, P>,
 >(
-    appstate: Arc<Mutex<AppState<D, P, C>>>,
+    appstate: Arc<Mutex<AppState<D, P, R, C>>>,
 ) {
     let template_url = match std::env::var("PXLS_CANVAS_TEMPLATE") {
         Ok(s) => s,
@@ -78,9 +83,10 @@ async fn callback_update_template<
 async fn callback_print_queue_length<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
+    R: RentryClient + Send,
     C: CommandProcessor<D, P>,
 >(
-    appstate: Arc<Mutex<AppState<D, P, C>>>,
+    appstate: Arc<Mutex<AppState<D, P, R, C>>>,
 ) {
     let app_state_lock = appstate.lock().await;
     let cmd_processor = app_state_lock.cmdprocessor.lock().await;
@@ -92,9 +98,10 @@ async fn callback_print_queue_length<
 async fn callback_get_score<
     D: Database + Send + 'static,
     P: PxlsClient + Send + 'static,
+    R: RentryClient + Send,
     C: CommandProcessor<D, P>,
 >(
-    appstate: Arc<Mutex<AppState<D, P, C>>>,
+    appstate: Arc<Mutex<AppState<D, P, R, C>>>,
     faction_id: u64,
 ) {
     let appstate_lock_guard = appstate.lock().await;
@@ -113,12 +120,32 @@ async fn callback_get_score<
         });
 }
 
+async fn callback_rentry<
+    D: Database + Send + 'static,
+    P: PxlsClient + Send + 'static,
+    R: RentryClient + Send,
+    C: CommandProcessor<D, P>,
+>(
+    appstate: Arc<Mutex<AppState<D, P, R, C>>>,
+    faction_id: u64,
+) {
+    let appstate_lock_guard = appstate.lock().await;
+    let cmd_processor_lock_guard = appstate_lock_guard.cmdprocessor.lock().await;
+    let cmd_processor = cmd_processor_lock_guard.as_ref().unwrap();
+
+    cmd_processor.queue_command(commandprocessor::Command::UpdateUsersFromURL(
+        USERS_LIST.to_string(),
+        faction_id,
+    ))
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
     let app_state = Arc::new(Mutex::new(
-        appstate::new_real_appstate().expect("can create normal app state"),
+        appstate::new_real_appstate(vec![SCORE_FACTION_ID_TO_MATCH])
+            .expect("can create normal app state"),
     ));
 
     let ws_client = {
@@ -148,6 +175,7 @@ async fn main() {
     let mut timer_3 = tokio::time::interval(tokio::time::Duration::from_mins(30));
     let mut timer_4 = tokio::time::interval(tokio::time::Duration::from_secs(5));
     let mut timer_5 = tokio::time::interval(tokio::time::Duration::from_secs(5));
+    let mut timer_6 = tokio::time::interval(tokio::time::Duration::from_hours(24));
 
     timer_2.tick().await; // don't want to update factions immediately
 
@@ -174,6 +202,10 @@ async fn main() {
 
             _ = timer_5.tick() => {
                 callback_get_score(app_state.clone(), SCORE_FACTION_ID_TO_MATCH).await;
+            }
+
+            _ = timer_6.tick() => {
+                callback_rentry(app_state.clone(), SCORE_FACTION_ID_TO_MATCH).await;
             }
 
             Ok(response) = mut_receiver.recv() => {
